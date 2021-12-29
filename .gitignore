@@ -1,0 +1,8 @@
+# Config files
+config.js
+
+# Package Module
+node_modules/
+
+# Log Files
+yarn-error.log
