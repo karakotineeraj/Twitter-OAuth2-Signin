@@ -10,19 +10,20 @@ interface IQuerystring {
 }
 
 type User = {
-	codeVerifier: null | string;
-	sessionState: null | string;
+	codeVerifier?: null | string;
+	sessionState?: null | string;
+	accessToken?: null | string;
+	refreshToken?: null | string;
 }
 
-let user: User = {
+const user: User = {
 	codeVerifier: null,
-	sessionState: null
+	sessionState: null,
+	accessToken: null,
+	refreshToken: null
 };
 
-const client = new TwitterApi({
-	clientId: config.TWITTER_CLIENT_ID,
-	clientSecret: config.TWITTER_CLIENT_SECRET,
-});
+let logClient: any;
 
 const fastify = Fastify({
 	logger: true
@@ -45,12 +46,17 @@ fastify.get("/", async (request, reply) => {
 });
 
 fastify.get("/requestToken", async (request, reply) => {
-	const { url, codeVerifier, state } = await client.generateOAuth2AuthLink('http://127.0.0.1:3000/callback', {
-		scope: ['tweet.read', 'users.read', 'offline.access']
+	const client = new TwitterApi({
+		clientId: config.TWITTER_CLIENT_ID,
 	});
 
-	user = { codeVerifier, sessionState: state};
-	console.log(url);
+	const { url, codeVerifier, state } = await client.generateOAuth2AuthLink('http://127.0.0.1:3000/callback', {
+		scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access']
+	});
+
+	user.codeVerifier = codeVerifier,
+	user.sessionState = state;
+	// console.log(url);
 
 	reply.redirect(url);
 })
@@ -59,11 +65,9 @@ fastify.get<{ Querystring: IQuerystring }>("/callback", async (request, reply) =
 	const { state, code } = request.query;
 	let { codeVerifier, sessionState } = user;
 
-	console.log("User object");
-	console.log(user);
-
-	console.log("Request object");	
-	console.log(request.query);
+	const client = new TwitterApi({
+		clientId: config.TWITTER_CLIENT_ID,
+	});
 
 	if(!codeVerifier || !code || !state || !sessionState) 
 		return reply.code(400).send('User denied the access...');
@@ -72,19 +76,24 @@ fastify.get<{ Querystring: IQuerystring }>("/callback", async (request, reply) =
 		return reply.code(400).send('Stored tokens don\'t match');
 
 	return client.loginWithOAuth2({ code, codeVerifier, redirectUri: 'http://127.0.0.1:3000/callback'})
-	.then(async ({client: loggedClient, accessToken, refreshToken}) => {
-		console.log(loggedClient);
-		reply.send(await loggedClient.v2.me());
+	.then(async ({client, accessToken, refreshToken}) => {
+		user.accessToken = accessToken;
+		user.refreshToken = refreshToken;
+
+		logClient = client.v2;	
+		reply.redirect('/tweet');
 	})
 	.catch(err => {
 		console.log(err);
 		reply.send(err)
 	});
-
-
 });
 
+fastify.get("/tweet", async (request, reply) => {
+	await logClient.tweet("Things are looking grim around here...");
 
+	reply.redirect("/");
+})
 
 // Listen on port 3000
 fastify.listen(3000, () => console.log("Running on port 3000..."));
